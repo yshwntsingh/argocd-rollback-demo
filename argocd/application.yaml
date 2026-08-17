@@ -1,0 +1,23 @@
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: rollback-demo
+  namespace: argocd
+  finalizers:
+    - resources-finalizer.argocd.argoproj.io
+spec:
+  project: default
+  source:
+    # CHANGE THIS to your new repo URL:
+    repoURL: https://github.com/<YOUR_ORG>/autonomous-rollback-demo.git
+    targetRevision: main
+    path: k8s/
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: monitoring
+  syncPolicy:
+    automated:
+      prune: true
+      selfHeal: true      # this is why rollback MUST be done in Git, not kubectl
+    syncOptions:
+      - CreateNamespace=true

@@ -1,0 +1,70 @@
+name: Deploy on tag
+
+# A release/tag is the trigger. Pushing tag vX.Y.Z makes this workflow write the
+# image from releases/vX.Y.Z.env into k8s/deployment.yaml and commit it to main.
+# ArgoCD (tracking main) then syncs that commit to the cluster.
+on:
+  push:
+    tags:
+      - 'v*'
+  # Manual fallback: run from the Actions tab with an explicit image.
+  workflow_dispatch:
+    inputs:
+      image:
+        description: 'Container image to deploy (e.g. nginx:1.25)'
+        required: true
+
+permissions:
+  contents: write   # needed to commit the manifest change back to main
+
+jobs:
+  promote:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out main (full history)
+        uses: actions/checkout@v4
+        with:
+          ref: main
+          fetch-depth: 0
+
+      - name: Resolve image for this release
+        id: img
+        run: |
+          set -euo pipefail
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
+            IMAGE="${{ github.event.inputs.image }}"
+          else
+            TAG="${GITHUB_REF_NAME}"           # e.g. v2.0.0
+            ENV_FILE="releases/${TAG}.env"
+            if [ ! -f "$ENV_FILE" ]; then
+              echo "::error::No release file found at $ENV_FILE"
+              exit 1
+            fi
+            # shellcheck disable=SC1090
+            source "$ENV_FILE"
+            IMAGE="${IMAGE:?IMAGE not set in $ENV_FILE}"
+          fi
+          echo "image=$IMAGE" >> "$GITHUB_OUTPUT"
+          echo "Deploying image: $IMAGE"
+
+      - name: Write image into k8s/deployment.yaml
+        run: |
+          set -euo pipefail
+          IMAGE="${{ steps.img.outputs.image }}"
+          # Replace the single nginx image line with the release image.
+          sed -i -E "s|(^\s*image:\s*).*|\1${IMAGE}|" k8s/deployment.yaml
+          echo "----- k8s/deployment.yaml (image line) -----"
+          grep -nE "image:" k8s/deployment.yaml
+
+      - name: Commit to main
+        run: |
+          set -euo pipefail
+          git config user.name  "release-bot"
+          git config user.email "release-bot@users.noreply.github.com"
+          if git diff --quiet -- k8s/deployment.yaml; then
+            echo "No manifest change; nothing to commit."
+            exit 0
+          fi
+          git add k8s/deployment.yaml
+          git commit -m "deploy: ${GITHUB_REF_NAME:-manual} -> ${{ steps.img.outputs.image }}"
+          git push origin HEAD:main
