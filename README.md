@@ -12,13 +12,41 @@ tag v1.0.0 -> workflow writes nginx:1.25 to k8s/deployment.yaml -> commit to mai
 
 tag v2.0.0 -> workflow writes nginx:99.99 to k8s/deployment.yaml -> commit to main
            -> ArgoCD syncs -> ImagePullBackOff
-           -> agent times out -> git revert the bad commit -> push
+           -> agent times out -> opens a REVERT PR         (waits for approval)
+           -> a human reviews + merges the PR              <-- human in the loop
            -> ArgoCD syncs -> back to nginx:1.25                          (ROLLED BACK)
 ```
 
 The rollback is a **Git revert, not `kubectl rollout undo`**. With ArgoCD
 `selfHeal: true`, Git is the source of truth, so a kubectl-level rollback would be
 overwritten on the next sync. Fixing Git is the durable fix.
+
+## Human-in-the-loop approval
+
+The agent does **not** push the rollback straight to `main`. On failure it:
+
+1. creates a branch `rollback/<sha>` that reverts the bad deploy commit,
+2. opens a **pull request**, optionally requesting reviewers and posting the link
+   to Slack,
+3. stops — the cluster is unchanged.
+
+A person reviews and merges the PR. Only the merge (a commit on `main`) makes
+ArgoCD sync the rollback. This is the approval gate.
+
+Relevant settings (env vars):
+
+- `ROLLBACK_MODE=pr` (default) opens a PR. `ROLLBACK_MODE=direct` reverts and
+  pushes to `main` with no gate (only if you don't want approval).
+- `REVIEWERS=alice,bob` requests review from those GitHub users.
+- `WAIT_FOR_MERGE=1` keeps the agent polling until the PR is merged (or closed),
+  so it can log/verify the rollback landed; otherwise it exits after opening the PR.
+- `SLACK_WEBHOOK=...` posts the PR link for the approver.
+
+`watch_and_rollback()` returns `"healthy"`, `"pr_opened"`, `"rolled_back"`, or
+`"error"` so your agent can branch on the outcome.
+
+You can also gate the *forward* deploy with a GitHub Environment that has required
+reviewers, if you want approval before v1/v2 reach the cluster too.
 
 ## Layout
 
@@ -66,10 +94,12 @@ GH_TOKEN=<token> python3 agent/git_rollback.py
 git tag v2.0.0 && git push origin v2.0.0
 # workflow commits nginx:99.99 -> ArgoCD deploys -> ImagePullBackOff
 
-REPO_DIR=. GH_REMOTE=https://github.com/<YOUR_ORG>/autonomous-rollback-demo.git \
-GH_TOKEN=<token> python3 agent/git_rollback.py
-# waits, detects failure, git-reverts the bad commit, pushes
-# ArgoCD syncs -> back to nginx:1.25
+REPO_DIR=. \
+GH_REMOTE=https://github.com/<YOUR_ORG>/autonomous-rollback-demo.git \
+GH_TOKEN=<token> REVIEWERS=<your-gh-username> \
+python3 agent/git_rollback.py
+# waits, detects failure, opens a REVERT PR, and stops.
+# -> review + merge the PR -> ArgoCD syncs -> back to nginx:1.25
 ```
 
 Verify:
@@ -85,7 +115,8 @@ git log --oneline -n 4        # shows: deploy v2 -> Revert "deploy v2"
 
 ```python
 from git_rollback import watch_and_rollback
-healthy = watch_and_rollback()   # True = deploy healthy, False = rolled back
+result = watch_and_rollback()
+# "healthy" | "pr_opened" (awaiting approval) | "rolled_back" | "error"
 ```
 
 Call it right after a deploy is observed. It reads config from env vars
