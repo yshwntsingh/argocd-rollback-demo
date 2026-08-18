@@ -55,8 +55,8 @@ import urllib.request
 import urllib.error
 from datetime import datetime
 
-NAMESPACE = os.getenv("NAMESPACE", "monitoring")
-SELECTOR = os.getenv("SELECTOR", "app=demo-app")
+NAMESPACE = os.getenv("NAMESPACE", "demoapp")
+SELECTOR = os.getenv("SELECTOR", "app=my-app")
 DEPLOYMENT = os.getenv("DEPLOYMENT", "demo-app")
 TIMEOUT = int(os.getenv("TIMEOUT", "120"))
 POLL = int(os.getenv("POLL", "10"))

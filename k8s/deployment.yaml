@@ -2,9 +2,9 @@ apiVersion: apps/v1
 kind: Deployment
 metadata:
   name: demo-app
-  namespace: monitoring
+  namespace: demoapp
   labels:
-    app: demo-app
+    app: my-app
 spec:
   replicas: 3
   # progressDeadlineSeconds is how long ArgoCD/K8s waits before it marks the
@@ -17,11 +17,11 @@ spec:
       maxUnavailable: 0   # never drop below desired replicas -> zero downtime
   selector:
     matchLabels:
-      app: demo-app
+      app: my-app
   template:
     metadata:
       labels:
-        app: demo-app
+        app: my-app
     spec:
       containers:
       - name: web

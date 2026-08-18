@@ -9,12 +9,12 @@ spec:
   project: default
   source:
     # CHANGE THIS to your new repo URL:
-    repoURL: https://github.com/<YOUR_ORG>/autonomous-rollback-demo.git
+    repoURL: https://github.com/yshwntsingh/argocd-rollback-demo.git
     targetRevision: main
     path: k8s/
   destination:
     server: https://kubernetes.default.svc
-    namespace: monitoring
+    namespace: demoapp
   syncPolicy:
     automated:
       prune: true
