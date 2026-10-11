@@ -25,7 +25,7 @@ spec:
     spec:
       containers:
       - name: web
-        image: nginx:99.99
+        image: nginx:1.25
         ports:
         - containerPort: 80
         readinessProbe:
